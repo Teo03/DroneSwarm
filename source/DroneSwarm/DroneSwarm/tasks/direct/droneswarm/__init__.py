@@ -13,11 +13,11 @@ from . import agents
 
 
 gym.register(
-    id="Template-Droneswarm-Direct-v0",
-    entry_point=f"{__name__}.droneswarm_env:DroneswarmEnv",
+    id="Template-DroneSwarm-Direct-v0",
+    entry_point=f"{__name__}.droneswarm_env:DroneSwarmEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.droneswarm_env_cfg:DroneswarmEnvCfg",
+        "env_cfg_entry_point": f"{__name__}.droneswarm_env:DroneSwarmEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PPORunnerCfg",
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
     },
