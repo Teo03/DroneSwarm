@@ -3,6 +3,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Robot configurations for drone trash collection."""
+"""Robot configurations for DroneSwarm."""
 
 from .quadcopter import CRAZYFLIE_CFG

@@ -1,9 +1,9 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Configuration for the quadcopters"""
+"""Configuration for the quadcopter used in drone trash collection."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ CRAZYFLIE_CFG = ArticulationCfg(
         copy_from_source=False,
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.5),
+        pos=(0.0, 0.0, 1.5),  # Start higher for stability
         joint_pos={
             ".*": 0.0,
         },
@@ -54,4 +54,4 @@ CRAZYFLIE_CFG = ArticulationCfg(
         ),
     },
 )
-"""Configuration for the Crazyflie quadcopter."""
+"""Configuration for the Crazyflie quadcopter for trash collection task."""
