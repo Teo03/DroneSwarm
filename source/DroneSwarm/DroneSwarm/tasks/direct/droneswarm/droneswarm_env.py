@@ -109,8 +109,12 @@ class DroneSwarmEnvCfg(DirectRLEnvCfg):
     )
     write_image_to_file = False  # Set True to debug camera view
 
-    # Observation space is the camera image shape
-    observation_space = [64, 64, 3]
+    # Observation space: hybrid camera + state (like QuadcopterCameraEnv)
+    # State: lin_vel(3) + ang_vel(3) + quat(4) + height(1) + carrying(1) + gripper(1) = 13
+    observation_space = {
+        "camera": [64, 64, 3],
+        "state": 13,
+    }
 
     # Viewer settings
     viewer = ViewerCfg(eye=(15.0, 15.0, 10.0))
@@ -135,7 +139,7 @@ class DroneSwarmEnvCfg(DirectRLEnvCfg):
     # env_spacing must be > camera far clipping to prevent seeing other environments
     # grid_size=10, so environments need at least 2*grid_size + buffer spacing
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=1024,  # Increase for better GPU utilization (RTX 5060 Ti 16GB)
+        num_envs=256,  # 256 optimal for vision-based training
         env_spacing=25.0,  # Increased spacing to isolate camera views
         replicate_physics=True,
         filter_collisions=True,
@@ -144,18 +148,21 @@ class DroneSwarmEnvCfg(DirectRLEnvCfg):
     # Robot configuration
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
 
-    # Trash configuration (rigid body sphere)
+    # Trash configuration (rigid body sphere - bright orange/red for visibility)
     trash: RigidObjectCfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Trash",
         spawn=sim_utils.SphereCfg(
-            radius=0.15,
+            radius=0.3,  # Bigger for easier visibility
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,
                 max_depenetration_velocity=5.0,
             ),
             mass_props=sim_utils.MassPropertiesCfg(mass=0.05),
             collision_props=sim_utils.CollisionPropertiesCfg(),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.2, 0.8, 0.2)),
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(1.0, 0.5, 0.0),  # Bright orange
+                emissive_color=(0.3, 0.15, 0.0),  # Glowing orange
+            ),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(0.0, 0.0, 0.5),
@@ -164,7 +171,7 @@ class DroneSwarmEnvCfg(DirectRLEnvCfg):
         ),
     )
 
-    # Bin configuration (static cylinder - visible to cameras)
+    # Bin configuration (static cylinder - bright blue, visible to cameras)
     bin: RigidObjectCfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Bin",
         spawn=sim_utils.CylinderCfg(
@@ -175,7 +182,10 @@ class DroneSwarmEnvCfg(DirectRLEnvCfg):
                 disable_gravity=True,
             ),
             collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.3, 0.3, 0.9)),
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.0, 0.0, 1.0),  # Bright blue
+                emissive_color=(0.0, 0.0, 0.3),  # Glowing blue
+            ),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(
             pos=(5.0, 0.0, 0.25),  # Bin at +5m X, slightly above ground
@@ -184,27 +194,76 @@ class DroneSwarmEnvCfg(DirectRLEnvCfg):
         ),
     )
 
+    # Walls to isolate each environment visually (prevent seeing neighbor's objects)
+    wall_height = 6.0
+    wall_distance = 10.0  # Distance from center
+
+    wall_front: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/WallFront",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.2, 20.0, wall_height),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.3, 0.3, 0.3)),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(wall_distance, 0.0, wall_height / 2)),
+    )
+
+    wall_back: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/WallBack",
+        spawn=sim_utils.CuboidCfg(
+            size=(0.2, 20.0, wall_height),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.3, 0.3, 0.3)),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-wall_distance, 0.0, wall_height / 2)),
+    )
+
+    wall_left: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/WallLeft",
+        spawn=sim_utils.CuboidCfg(
+            size=(20.0, 0.2, wall_height),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.3, 0.3, 0.3)),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, wall_distance, wall_height / 2)),
+    )
+
+    wall_right: RigidObjectCfg = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/WallRight",
+        spawn=sim_utils.CuboidCfg(
+            size=(20.0, 0.2, wall_height),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True, disable_gravity=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=False),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.3, 0.3, 0.3)),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, -wall_distance, wall_height / 2)),
+    )
+
     # Drone control parameters
     thrust_to_weight = 1.9
     moment_scale = 0.01
 
     # Task-specific parameters
     grid_size = 10.0
-    pickup_radius = 1.0
+    pickup_radius = 2.0  # Larger for easier pickup
     bin_radius = 2.5
-    hover_speed_threshold = 0.7
+    hover_speed_threshold = 1.0  # More lenient hover requirement
     gripper_close_threshold = 0.4
     gripper_open_threshold = 0.4
     gripper_speed = 0.2
-    max_vel = 50.0
-    max_omega = 50.0
 
-    # Reward scales
-    pickup_reward = 1.0
-    deposit_reward = 5.0
-    completion_reward = 10.0
-    drop_penalty = -1.0
-    out_of_bounds_penalty = -1.0
+    # Simplified rewards (like working QuadcopterCameraEnv)
+    distance_to_target_scale = 0.1  # Main guidance toward target
+    pickup_bonus = 1.0  # Bonus when pickup happens
+    deposit_bonus = 2.0  # Bonus when deposit happens
+    carrying_bonus = 0.02  # Per-step reward while carrying (encourages holding trash)
+    hover_above_trash_bonus = 0.05  # Reward for hovering above trash (ready to pickup)
+    survival_bonus = 0.01  # Small reward for staying alive
+    lin_vel_penalty_scale = -0.0005  # Small velocity penalty
+    ang_vel_penalty_scale = -0.0002  # Small angular velocity penalty
 
 
 class DroneSwarmEnv(DirectRLEnv):
@@ -246,7 +305,6 @@ class DroneSwarmEnv(DirectRLEnv):
         # Task state
         self._carrying_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._trash_present = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
-        self._last_dist_reward = torch.zeros(self.num_envs, device=self.device)
 
         # Bin position
         bin_offset = 5.0
@@ -255,15 +313,10 @@ class DroneSwarmEnv(DirectRLEnv):
         self._bin_pos[:, 1] = 0.0
         self._bin_pos[:, 2] = 0.0
 
-        # Logging
+        # Logging (simplified like QuadcopterCameraEnv)
         self._episode_sums = {
             key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
-            for key in [
-                "pickup_reward",
-                "deposit_reward",
-                "distance_shaping",
-                "penalties",
-            ]
+            for key in ["distance_to_target", "pickup", "deposit", "lin_vel", "ang_vel"]
         }
 
         # Get robot properties
@@ -283,7 +336,7 @@ class DroneSwarmEnv(DirectRLEnv):
         self.set_debug_vis(self.cfg.debug_vis)
 
     def _setup_scene(self):
-        """Set up the scene with drone, camera, trash, and bin."""
+        """Set up the scene with drone, camera, trash, bin, and isolation walls."""
         # Drone
         self._robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self._robot
@@ -299,6 +352,16 @@ class DroneSwarmEnv(DirectRLEnv):
         # Bin object (static, visible to cameras)
         self._bin = RigidObject(self.cfg.bin)
         self.scene.rigid_objects["bin"] = self._bin
+
+        # Walls to isolate each environment visually
+        self._wall_front = RigidObject(self.cfg.wall_front)
+        self._wall_back = RigidObject(self.cfg.wall_back)
+        self._wall_left = RigidObject(self.cfg.wall_left)
+        self._wall_right = RigidObject(self.cfg.wall_right)
+        self.scene.rigid_objects["wall_front"] = self._wall_front
+        self.scene.rigid_objects["wall_back"] = self._wall_back
+        self.scene.rigid_objects["wall_left"] = self._wall_left
+        self.scene.rigid_objects["wall_right"] = self._wall_right
 
         # Terrain
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
@@ -368,17 +431,17 @@ class DroneSwarmEnv(DirectRLEnv):
         # Get environment origins for height calculation
         env_origins_z = self._terrain.env_origins[:, 2]
 
-        # Build state tensor (13D)
+        # Build state tensor (13D) - like QuadcopterCameraEnv but with gripper info
         state = torch.cat(
             [
                 # Linear velocity (body frame) - from IMU - 3D
-                self._robot.data.root_lin_vel_b / self.cfg.max_vel,
+                self._robot.data.root_lin_vel_b,
                 # Angular velocity (body frame) - from gyroscope - 3D
-                self._robot.data.root_ang_vel_b / self.cfg.max_omega,
+                self._robot.data.root_ang_vel_b,
                 # Quaternion (wxyz) - from IMU attitude estimation - 4D
                 drone_quat,
                 # Height above ground - from altimeter/barometer - 1D
-                ((drone_pos[:, 2] - env_origins_z) / self.cfg.grid_size).unsqueeze(-1),
+                (drone_pos[:, 2] - env_origins_z).unsqueeze(-1),
                 # Carrying status - from gripper sensor - 1D
                 self._carrying_mask.float().unsqueeze(-1),
                 # Gripper state - from gripper encoder - 1D
@@ -391,92 +454,92 @@ class DroneSwarmEnv(DirectRLEnv):
             from isaaclab.sensors import save_images_to_file
             save_images_to_file(camera_data, "droneswarm_rgb.png")
 
-        return {"policy": camera_data.clone(), "state": state}
+        # Return nested dict format for hybrid observations (camera + state)
+        return {"policy": {"camera": camera_data.clone(), "state": state.clone()}}
 
     def _get_rewards(self) -> torch.Tensor:
-        """Compute rewards based on task progress."""
+        """Compute rewards - simplified like QuadcopterCameraEnv."""
         reward = torch.zeros(self.num_envs, device=self.device)
 
+        # Survival bonus
+        reward += self.cfg.survival_bonus
+
         drone_pos = self._robot.data.root_pos_w
-        drone_vel = self._robot.data.root_lin_vel_w
         trash_pos = self._trash.data.root_pos_w
-        speed = torch.norm(drone_vel, dim=-1)
 
         # Bin position in world frame
         bin_pos_world = self._bin_pos.clone()
         bin_pos_world[:, :2] += self._terrain.env_origins[:, :2]
 
-        # Horizontal distances
-        to_trash_horiz = drone_pos[:, :2] - trash_pos[:, :2]
-        trash_dist_horiz = torch.norm(to_trash_horiz, dim=-1)
+        # Distances
+        trash_dist = torch.norm(drone_pos[:, :2] - trash_pos[:, :2], dim=-1)
+        bin_dist = torch.norm(drone_pos[:, :2] - bin_pos_world[:, :2], dim=-1)
         height_above_trash = drone_pos[:, 2] - trash_pos[:, 2]
 
-        to_bin_horiz = drone_pos[:, :2] - bin_pos_world[:, :2]
-        bin_dist_horiz = torch.norm(to_bin_horiz, dim=-1)
+        # Current target: trash if not carrying, bin if carrying
+        target_dist = torch.where(self._carrying_mask, bin_dist, trash_dist)
+
+        # === DISTANCE REWARD (main guidance) ===
+        distance_reward = 1.0 - torch.tanh(target_dist / 2.0)
+        reward += distance_reward * self.cfg.distance_to_target_scale
+
+        # === HOVER ABOVE TRASH BONUS (encourages getting in pickup position) ===
+        in_pickup_position = (
+            (~self._carrying_mask) &
+            (self._trash_present) &
+            (trash_dist < self.cfg.pickup_radius) &
+            (height_above_trash > 0) &
+            (height_above_trash < self.cfg.pickup_radius * 2)
+        )
+        reward += in_pickup_position.float() * self.cfg.hover_above_trash_bonus
+
+        # === CARRYING BONUS (encourages holding trash while moving to bin) ===
+        reward += self._carrying_mask.float() * self.cfg.carrying_bonus
 
         # === PICKUP LOGIC ===
         can_pickup = (
             (~self._carrying_mask) &
             (self._trash_present) &
-            (trash_dist_horiz < self.cfg.pickup_radius) &
+            (trash_dist < self.cfg.pickup_radius) &
             (height_above_trash > 0) &
             (height_above_trash < self.cfg.pickup_radius * 2) &
-            (speed < self.cfg.hover_speed_threshold) &
             (self._gripper_state >= self.cfg.gripper_close_threshold)
         )
 
         if can_pickup.any():
             pickup_envs = can_pickup.nonzero(as_tuple=True)[0]
             self._carrying_mask[pickup_envs] = True
-            self._last_dist_reward[pickup_envs] = 0.0
-            reward[pickup_envs] += self.cfg.pickup_reward
-            self._episode_sums["pickup_reward"][pickup_envs] += self.cfg.pickup_reward
+            reward[pickup_envs] += self.cfg.pickup_bonus
+            self._episode_sums["pickup"][pickup_envs] += self.cfg.pickup_bonus
 
-        # === DEPOSIT / DROP LOGIC ===
+        # === DEPOSIT LOGIC ===
         gripper_opened = self._gripper_state < self.cfg.gripper_open_threshold
-        can_release = self._carrying_mask & gripper_opened
+        can_deposit = self._carrying_mask & gripper_opened & (bin_dist < self.cfg.bin_radius)
 
-        if can_release.any():
-            release_envs = can_release.nonzero(as_tuple=True)[0]
-            over_bin = bin_dist_horiz[release_envs] < self.cfg.bin_radius
+        if can_deposit.any():
+            deposit_envs = can_deposit.nonzero(as_tuple=True)[0]
+            self._carrying_mask[deposit_envs] = False
+            self._trash_present[deposit_envs] = False
+            reward[deposit_envs] += self.cfg.deposit_bonus
+            self._episode_sums["deposit"][deposit_envs] += self.cfg.deposit_bonus
 
-            # Successful deposit
-            deposit_envs = release_envs[over_bin]
-            if len(deposit_envs) > 0:
-                self._carrying_mask[deposit_envs] = False
-                self._trash_present[deposit_envs] = False
-                self._last_dist_reward[deposit_envs] = 0.0
-                reward[deposit_envs] += self.cfg.deposit_reward
-                self._episode_sums["deposit_reward"][deposit_envs] += self.cfg.deposit_reward
+        # Drop outside bin - just respawn (no penalty, keep it simple)
+        dropped_outside = self._carrying_mask & gripper_opened & (bin_dist >= self.cfg.bin_radius)
+        if dropped_outside.any():
+            drop_envs = dropped_outside.nonzero(as_tuple=True)[0]
+            self._carrying_mask[drop_envs] = False
+            self._respawn_trash(drop_envs)
 
-                all_deposited = ~self._trash_present[deposit_envs]
-                reward[deposit_envs[all_deposited]] += self.cfg.completion_reward
+        # === SMALL VELOCITY PENALTIES ===
+        lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
+        ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
+        reward += lin_vel * self.cfg.lin_vel_penalty_scale
+        reward += ang_vel * self.cfg.ang_vel_penalty_scale
 
-            # Dropped outside bin - respawn trash
-            drop_envs = release_envs[~over_bin]
-            if len(drop_envs) > 0:
-                self._carrying_mask[drop_envs] = False
-                self._last_dist_reward[drop_envs] = 0.0
-                reward[drop_envs] += self.cfg.drop_penalty
-                self._episode_sums["penalties"][drop_envs] += abs(self.cfg.drop_penalty)
-                self._respawn_trash(drop_envs)
-
-        # === DISTANCE SHAPING ===
-        target_pos = torch.where(
-            self._carrying_mask.unsqueeze(-1).expand(-1, 3),
-            bin_pos_world,
-            trash_pos,
-        )
-        to_target = target_pos - drone_pos
-        target_dist = torch.norm(to_target[:, :2], dim=-1)
-
-        dist_reward = torch.exp(-0.5 * target_dist)
-        shaping = dist_reward - self._last_dist_reward
-        self._last_dist_reward = dist_reward.clone()
-
-        shaping = shaping * self._trash_present.float()
-        reward += shaping
-        self._episode_sums["distance_shaping"] += shaping
+        # Logging
+        self._episode_sums["distance_to_target"] += distance_reward * self.cfg.distance_to_target_scale
+        self._episode_sums["lin_vel"] += lin_vel * self.cfg.lin_vel_penalty_scale
+        self._episode_sums["ang_vel"] += ang_vel * self.cfg.ang_vel_penalty_scale
 
         return reward
 
@@ -503,10 +566,6 @@ class DroneSwarmEnv(DirectRLEnv):
         ground_crash = on_ground & nearly_flat
 
         died = out_of_bounds | upside_down | ground_crash
-
-        if died.any():
-            died_envs = died.nonzero(as_tuple=True)[0]
-            self._episode_sums["penalties"][died_envs] += abs(self.cfg.out_of_bounds_penalty)
 
         time_out = self.episode_length_buf >= self.max_episode_length - 1
         success = ~self._trash_present
@@ -546,7 +605,6 @@ class DroneSwarmEnv(DirectRLEnv):
         self._gripper_state[env_ids] = 0.0
         self._carrying_mask[env_ids] = False
         self._trash_present[env_ids] = True
-        self._last_dist_reward[env_ids] = 0.0
 
         # Reset drone position
         margin = 3.0

@@ -40,12 +40,47 @@ python scripts/random_agent.py --task=Template-DroneSwarm-Direct-v0 --enable_cam
 pre-commit run --all-files
 ```
 
+### Quick Start (copy-paste ready)
+```bash
+# Quick test (10k timesteps)
+conda activate env_isaaclab && python scripts/skrl/train.py --task=Template-DroneSwarm-Direct-v0 --headless --enable_cameras --num_envs=256 +trainer.timesteps=10000 agent.agent.experiment.experiment_name=my_experiment
+
+# Medium run (50k timesteps)
+conda activate env_isaaclab && python scripts/skrl/train.py --task=Template-DroneSwarm-Direct-v0 --headless --enable_cameras --num_envs=256 +trainer.timesteps=50000 agent.agent.experiment.experiment_name=my_experiment
+
+# Full training (200k timesteps)
+conda activate env_isaaclab && python scripts/skrl/train.py --task=Template-DroneSwarm-Direct-v0 --headless --enable_cameras --num_envs=256 +trainer.timesteps=200000 agent.agent.experiment.experiment_name=my_experiment
+```
+
+**Note:** For vision-based training, `--num_envs=256` is optimal. Camera rendering is expensive - more envs increases time significantly without proportional benefit.
+
 ### Common Training Arguments
+- `--headless` - Run without GUI (faster training)
 - `--num_envs=N` - Override number of parallel environments
-- `--max_iterations=N` - Set training iterations
+- `+trainer.timesteps=N` - Set training timesteps (e.g., `+trainer.timesteps=100000`)
 - `--video` - Record training videos
 - `--seed=N` - Set random seed
-- `run_name=my_experiment` (RSL-RL) or `agent.agent.experiment.experiment_name=my_run` (skrl) - Set experiment name
+- `agent.agent.experiment.experiment_name=my_run` (skrl) or `run_name=my_experiment` (RSL-RL) - Set experiment name
+
+### Timesteps Reference
+
+| Concept | Description |
+|---------|-------------|
+| **timesteps** | Total policy update steps (set via `+trainer.timesteps=N`) |
+| **num_envs** | Parallel environments (set via `--num_envs=N`) |
+| **total_env_steps** | `timesteps × num_envs` = actual environment interactions |
+
+**Example configurations (with 256 envs - optimal for vision):**
+
+| Use Case | Timesteps | Total env steps |
+|----------|-----------|-----------------|
+| Quick test | `+trainer.timesteps=10000` | 2.5M env steps |
+| Short run | `+trainer.timesteps=50000` | 12.8M env steps |
+| Medium run | `+trainer.timesteps=100000` | 25.6M env steps |
+| Long run | `+trainer.timesteps=200000` | 51.2M env steps |
+| Full training | `+trainer.timesteps=500000` | 128M env steps |
+
+**Recommended for vision-based RL:** Start with 50k-100k timesteps to assess learning, scale to 500k+ for full training.
 
 ## Architecture
 
@@ -134,6 +169,37 @@ print(ea.Tags()['scalars'])
 for event in ea.Scalars('Reward / Total reward (mean)'):
     print(f'Step {event.step}: {event.value:.4f}')
 ```
+
+## Training Workflow
+
+### 1. Run Training
+Start a training run with descriptive name and timesteps:
+```bash
+conda activate env_isaaclab && python scripts/skrl/train.py --task=Template-DroneSwarm-Direct-v0 --headless --enable_cameras \
+    --num_envs=256 +trainer.timesteps=50000 agent.agent.experiment.experiment_name=my_experiment
+```
+
+Either run the command in background or provide the command to the user and wait for them to indicate when training is complete and results should be checked.
+
+### 2. Check Results
+Use the check script to analyze training progress:
+```bash
+./scripts/check_training.sh my_experiment
+./scripts/check_training.sh -v my_experiment  # For more detail
+```
+
+Key metrics to evaluate:
+- **Pickup reward**: Is the drone learning to find and pick up trash?
+- **Deposit reward**: Is the drone successfully depositing trash in the bin?
+- **Penalties**: Are crashes/out-of-bounds events decreasing?
+- **Total reward trend**: Overall improvement direction
+
+### 3. Iterate and Improve
+Based on results, modify:
+- **Reward weights** in `droneswarm_env.py` (pickup_reward_scale, deposit_reward_scale, etc.)
+- **Network architecture** in `skrl_ppo_cfg.yaml`
+- **PPO hyperparameters** (learning_rate, mini_batches, etc.)
+- **Environment parameters** (num_envs, episode length, observation space)
 
 ## Code Style
 
