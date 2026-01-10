@@ -33,6 +33,11 @@ CRAZYFLIE_CFG = ArticulationCfg(
             stabilization_threshold=0.001,
         ),
         copy_from_source=False,
+        # Bright red color for visibility
+        visual_material=sim_utils.PreviewSurfaceCfg(
+            diffuse_color=(1.0, 0.0, 0.0),  # Bright red
+            emissive_color=(0.5, 0.0, 0.0),  # Glowing red
+        ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 1.5),  # Start higher for stability
